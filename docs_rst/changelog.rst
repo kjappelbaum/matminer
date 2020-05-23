@@ -5,27 +5,6 @@
 matminer Changelog
 ==================
 
-**v0.6.3**
-
-* add IntersticeDistribution featurizer (Q. Wang)
-* change Dimensionality featurizer to be more accurate (A. Ganose)
-* add CohesiveEnergyMP featurizer that gets MP cohesive energy from MP Rester (A. Jain)
-* default mp dataretrieval to decode mp entities by default (A. Dunn)
-* update dependencies and tests (A. Ganose)
-* misc fixes / documentation updates (Q. Wang, A. Dunn, A. Jain, L. Ward, S.P. Ong, A. Ganose)
-
-
-**v0.6.2**
-
-* Update forum to Discourse link (A. Ganose)
-* Add StructuralComplexity featurizer (K. Muraoka)
-* Resolve optional requirements problems, update sklearn requirement (A. Dunn)
-* Update references to DScribe (A. Dunn)
-
-**v0.6.1**
-
-This version was skipped due to an upload issue
-
 **v0.6.0**
 
 * Ensure Yang omega is never NaN in YangSolidSolution featurizer (L. Ward)

@@ -10,9 +10,9 @@ import numpy as np
 import pandas as pd
 from six import string_types, reraise
 from sklearn.base import TransformerMixin, BaseEstimator, is_classifier
-from tqdm.auto import tqdm
+import tqdm
 
-from matminer.utils.utils import homogenize_multiindex
+from matminer.utils.utils import homogenize_multiindex, is_notebook
 
 
 class BaseFeaturizer(BaseEstimator, TransformerMixin):
@@ -250,7 +250,7 @@ class BaseFeaturizer(BaseEstimator, TransformerMixin):
     def transform(self, X):
         """Compute features for a list of inputs"""
 
-        return self.featurize_many(X, ignore_errors=True, pbar=False)
+        return self.featurize_many(X, ignore_errors=True)
 
     def fit_featurize_dataframe(self, df, col_id, fit_args=None,
                                 *args, **kwargs):
@@ -437,8 +437,12 @@ class BaseFeaturizer(BaseEstimator, TransformerMixin):
 
         # Add a progress bar
         if pbar:
+            if is_notebook():
+                tqdm_func = tqdm.tqdm_notebook
+            else:
+                tqdm_func = tqdm.tqdm
             # list() required, tqdm has issues with memory if generator given
-            entries = tqdm(list(entries), desc=self.__class__.__name__)
+            entries = tqdm_func(list(entries), desc=self.__class__.__name__)
 
         # Run the actual featurization
         if self.n_jobs == 1:
