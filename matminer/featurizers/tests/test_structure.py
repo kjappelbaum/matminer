@@ -26,7 +26,8 @@ from matminer.featurizers.structure import DensityFeatures, \
     EwaldEnergy, BondFractions, BagofBonds, StructuralHeterogeneity, \
     MaximumPackingEfficiency, ChemicalOrdering, StructureComposition, \
     Dimensionality, XRDPowderPattern, CGCNNFeaturizer, JarvisCFID, \
-    SOAP, GlobalInstabilityIndex
+    SOAP, GlobalInstabilityIndex, \
+    StructuralComplexity
 
 # For the CGCNNFeaturizer
 try:
@@ -102,12 +103,12 @@ class StructureFeaturesTest(PymatgenTest):
 
     def test_dimensionality(self):
         cscl = PymatgenTest.get_structure("CsCl")
+        graphite = PymatgenTest.get_structure("Graphite")
 
-        df = Dimensionality(bonds={("Cs", "Cl"): 3.5})
-        self.assertEqual(df.featurize(cscl)[0], 1)
+        df = Dimensionality()
 
-        df = Dimensionality(bonds={("Cs", "Cl"): 3.7})
         self.assertEqual(df.featurize(cscl)[0], 3)
+        self.assertEqual(df.featurize(graphite)[0], 2)
 
     def test_rdf_and_peaks(self):
         ## Test diamond
@@ -471,20 +472,20 @@ class StructureFeaturesTest(PymatgenTest):
         df = bf_voronoi.featurize_dataframe(df, 's')
 
         # Ensure all data is properly labelled and organized
-        self.assertArrayEqual(df['C - C bond frac.'].as_matrix(), [1.0, np.nan])
-        self.assertArrayEqual(df['Al - Ni bond frac.'].as_matrix(), [np.nan, 0.5])
-        self.assertArrayEqual(df['Al - Al bond frac.'].as_matrix(), [np.nan, 0.0])
-        self.assertArrayEqual(df['Ni - Ni bond frac.'].as_matrix(), [np.nan, 0.5])
+        self.assertArrayEqual(df['C - C bond frac.'].to_numpy(), [1.0, np.nan])
+        self.assertArrayEqual(df['Al - Ni bond frac.'].to_numpy(), [np.nan, 0.5])
+        self.assertArrayEqual(df['Al - Al bond frac.'].to_numpy(), [np.nan, 0.0])
+        self.assertArrayEqual(df['Ni - Ni bond frac.'].to_numpy(), [np.nan, 0.5])
 
         # Test to make sure bad_bond_values (bbv) are still changed correctly
         # and check inplace behavior of featurize dataframe.
         bf_voronoi.bbv = 0.0
         df = pd.DataFrame.from_dict({'s': s_list})
         df = bf_voronoi.featurize_dataframe(df, 's')
-        self.assertArrayEqual(df['C - C bond frac.'].as_matrix(), [1.0, 0.0])
-        self.assertArrayEqual(df['Al - Ni bond frac.'].as_matrix(), [0.0, 0.5])
-        self.assertArrayEqual(df['Al - Al bond frac.'].as_matrix(), [0.0, 0.0])
-        self.assertArrayEqual(df['Ni - Ni bond frac.'].as_matrix(), [0.0, 0.5])
+        self.assertArrayEqual(df['C - C bond frac.'].to_numpy(), [1.0, 0.0])
+        self.assertArrayEqual(df['Al - Ni bond frac.'].to_numpy(), [0.0, 0.5])
+        self.assertArrayEqual(df['Al - Al bond frac.'].to_numpy(), [0.0, 0.0])
+        self.assertArrayEqual(df['Ni - Ni bond frac.'].to_numpy(), [0.0, 0.5])
 
     def test_bob(self):
 
@@ -505,7 +506,7 @@ class StructureFeaturesTest(PymatgenTest):
                          'Ni - Ni bond #0', 'Ni - Ni bond #1',
                          'Ni - Ni bond #2', 'Ni - Ni bond #3',
                          'Ni - Ni bond #4', 'Ni - Ni bond #5']
-        self.assertAlmostEqual(bob.featurize(self.ni3al), truth1)
+        self.assertArrayAlmostEqual(bob.featurize(self.ni3al), truth1)
         self.assertEqual(bob.feature_labels(), truth1_labels)
 
         # Test padding from fitting and dataframe featurization
@@ -516,7 +517,7 @@ class StructureFeaturesTest(PymatgenTest):
         self.assertEqual(len(df.columns.values), 25)
         self.assertAlmostEqual(df['Cs site #0'][0], 7513.468312122532)
         self.assertAlmostEqual(df['Al site #0'][0], 0.0)
-        self.assertAlmostEqual(df['Cs - Cl bond #1'][0], 135.74726437398044)
+        self.assertAlmostEqual(df['Cs - Cl bond #1'][0], 135.74726437398044, 3)
         self.assertAlmostEqual(df['Al - Ni bond #0'][0], 0.0)
 
         # Test error handling for bad fits or null fits
@@ -849,7 +850,7 @@ class StructureFeaturesTest(PymatgenTest):
         soap.fit([self.diamond])
         v = soap.featurize(self.diamond)
         self.assertEqual(len(v), 30)
-        self.assertAlmostEqual(v[0], 5.299953937530518, places=6)
+        self.assertAlmostEqual(v[0], 5.299793243408203, places=6)
 
         soap.fit([self.ni3al])
         v = soap.featurize(self.ni3al)
@@ -905,6 +906,22 @@ class StructureFeaturesTest(PymatgenTest):
             gii.featurize(nacl_disordered)
         self.assertAlmostEqual(gii_pymat.featurize(nacl_disordered)[0], 0.39766464)
 
+    def test_structural_complexity(self):
+        s = Structure.from_file(
+            os.path.join(test_dir, "Dy2HfS5_mp-1198001_computed.cif")
+        )
 
-if __name__ == '__main__':
-    unittest.main()
+        featurizer = StructuralComplexity()
+        ig, igbits = featurizer.featurize(s)
+
+        self.assertAlmostEqual(2.5, ig, places=3)
+        self.assertAlmostEqual(80, igbits, places=3)
+
+        s = Structure.from_file(
+            os.path.join(test_dir, "Cs2CeN5O17_mp-1198000_computed.cif")
+        )
+
+        featurizer = StructuralComplexity()
+        ig, igbits = featurizer.featurize(s)
+
+        self.assertAlmostEqual(3.764, ig, places=3)

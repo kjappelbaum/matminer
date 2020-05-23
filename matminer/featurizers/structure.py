@@ -22,10 +22,10 @@ from monty.dev import requires
 from pymatgen import Structure, Lattice
 from pymatgen.analysis import bond_valence
 from pymatgen.analysis.diffraction.xrd import XRDCalculator
+from pymatgen.analysis.dimensionality import get_dimensionality_larsen
 from pymatgen.analysis.ewald import EwaldSummation
 from pymatgen.analysis.local_env import ValenceIonicRadiusEvaluator
 from pymatgen.analysis.local_env import VoronoiNN
-from pymatgen.analysis.structure_analyzer import get_dimensionality
 from pymatgen.core.periodic_table import Specie, Element
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 from pymatgen.symmetry.structure import SymmetrizedStructure
@@ -197,32 +197,32 @@ class Dimensionality(BaseFeaturizer):
     structure. This feature is sensitive to bond length tables that you use.
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self, nn_method=pmg_le.CrystalNN()):
         """
 
         Args:
-            **kwargs: keyword args to pass to get_dimensionality() method of
-                pymatgen.
+            **nn_method: The nearest neighbor method used to determine atomic
+                connectivity.
         """
-        self.kwargs = kwargs
+        self.nn_method = nn_method
 
     def featurize(self, s):
-        return [get_dimensionality(s, **self.kwargs)]
+        bs = self.nn_method.get_bonded_structure(s)
+        return [get_dimensionality_larsen(bs)]
 
     def feature_labels(self):
         return ["dimensionality"]
 
     def citations(self):
-        return ["@article{Gorai2016a, "
-                "author = {Gorai, Prashun and Toberer, Eric and Stevanovic, "
-                "Vladan}, doi = {10.1039/C6TA04121C}, issn = {2050-7488}, "
-                "journal = {J. Mater. Chem. A}, number = {12},pages = {4136}, "
-                "title = {{Computational Identification of Promising "
-                "Thermoelectric Materials Among Known Quasi-2D Binary "
-                "Compounds}}, volume = {2}, year = {2016}}"]
+        return ["@article{larsen2019definition, title={Definition of a scoring "
+                "parameter to identify low-dimensional materials components},"
+                "author={Larsen, Peter Mahler and Pandey, Mohnish and Strange, "
+                "Mikkel and Jacobsen, Karsten Wedel}, journal={Physical Review "
+                "Materials}, volume={3}, number={3}, pages={034003}, "
+                "year={2019}, publisher={APS} }"]
 
     def implementors(self):
-        return ["Anubhav Jain"]
+        return ["Anubhav Jain", "Alex Ganose"]
 
 
 class RadialDistributionFunction(BaseFeaturizer):
@@ -525,12 +525,11 @@ class ElectronicRadialDistributionFunction(BaseFeaturizer):
         for site in struct.sites:
             this_charge = float(site.specie.oxi_state)
             neighbors = struct.get_neighbors(site, self.cutoff)
-            for n in neighbors:
-                neigh_charge = float(n.site.specie.oxi_state)
-                d = n.distance
-                bin_index = int(d / self.dr)
+            for nnsite, dist, *_ in neighbors:
+                neigh_charge = float(nnsite.specie.oxi_state)
+                bin_index = int(dist / self.dr)
                 redf_dict["distribution"][bin_index] \
-                    += (this_charge * neigh_charge) / (struct.num_sites * d)
+                    += (this_charge * neigh_charge) / (struct.num_sites * dist)
 
         return [redf_dict]
 
@@ -1054,11 +1053,11 @@ class MinimumRelativeDistances(BaseFeaturizer):
         dists_relative_min = []
         for site in vire.structure:
             dists_relative = []
-            for n in vire.structure.get_neighbors(site, self.cutoff):
+            for nnsite, dist, *_ in vire.structure.get_neighbors(site, self.cutoff):
                 r_site = vire.radii[site.species_string]
-                r_neigh = vire.radii[n.site.species_string]
+                r_neigh = vire.radii[nnsite.species_string]
                 radii_dist = r_site + r_neigh
-                d_relative = n.distance / radii_dist
+                d_relative = dist / radii_dist
                 dists_relative.append(d_relative)
             dists_relative_min.append(min(dists_relative))
         return [dists_relative_min]
@@ -3483,8 +3482,13 @@ class SOAP(BaseFeaturizer):
         https://doi.org/10.1039/c6cp00415f
 
     Implementation (and some documentation) originally based on dscribe:
-    https://github.com/SINGROUP/dscribe. Please see their page for the latest
-    updates.
+    https://github.com/SINGROUP/dscribe.
+
+    "DScribe: Library of descriptors for machine learning in materials science",
+        Himanen, L., J{\"a}ger, M. O.J., Morooka, E. V., Federici
+        Canova, F., Ranawat, Y. S., Gao, D. Z., Rinke, P. and Foster, A. S.
+        Computer Physics Communications, 106949 (2019),
+        https://doi.org/10.1016/j.cpc.2019.106949
 
     Args:
         r_cut (float): Cutoff radius (>1) for local region, in angstrom.
@@ -3564,7 +3568,7 @@ class SOAP(BaseFeaturizer):
                  comb(self.n_max + 1, 2) * \
                  (self.l_max + 1)
         self.length = int(length)
-        self.soap = SOAP_dscribe(atomic_numbers=self.atomic_numbers,
+        self.soap = SOAP_dscribe(species=self.atomic_numbers,
                                  rcut=self.r_cut,
                                  nmax=self.n_max,
                                  lmax=self.l_max,
@@ -3614,15 +3618,16 @@ class SOAP(BaseFeaturizer):
                 "doi = {10.1039/C6CP00415F},"
                 "url = {http://dx.doi.org/10.1039/C6CP00415F},}",
 
-                "@article{himanen_dscribe:_2019,"
-                "title = {{DScribe}: {Library} of {Descriptors} for {Machine} {Learning} in {Materials} {Science}},"
-                "shorttitle = {{DScribe}},"
-                "url = {http://arxiv.org/abs/1904.08875},"
-                "urldate = {2019-04-24},"
-                "journal = {arXiv:1904.08875 [cond-mat]},"
-                "author = {Himanen, Lauri and J√§ger, Marc O. J. and Morooka, Eiaki V. and Canova, Filippo Federici and Ranawat, Yashasvi S. and Gao, David Z. and Rinke, Patrick and Foster, Adam S.},"
-                "month = apr,"
-                "year = {2019}}"]
+                '@article{dscribe, '
+                'author = {Himanen, Lauri and J{\"a}ger, Marc O.~J. and '
+                'Morooka, Eiaki V. and Federici Canova, Filippo and Ranawat, '
+                'Yashasvi S. and Gao, David Z. and Rinke, Patrick and Foster, '
+                'Adam S.}, '
+                'title = {{DScribe: Library of descriptors for machine '
+                'learning in materials science}}, '
+                'journal = {Computer Physics Communications}, '
+                'year = {2019}, pages = {106949}, '
+                'doi = {https://doi.org/10.1016/j.cpc.2019.106949}}']
 
     def implementors(self):
         return ["Lauri Himanen and dscribe team", "Alex Dunn"]
@@ -3801,15 +3806,15 @@ class GlobalInstabilityIndex(BaseFeaturizer):
                 raise ValueError(
                     'BV parameters for {} with valence {} and {} {} not '
                     'found in table'
-                    ''.format(site_el, 
-                              site_val, 
-                              neighbor_el, 
+                    ''.format(site_el,
+                              site_val,
+                              neighbor_el,
                               neighbor_val))
         return bvs
 
     def calc_gii_iucr(self, s):
         """Computes global instability index using tabulated bv params.
-        
+
         Args:
             s: Pymatgen Structure object
         Returns:
@@ -3817,22 +3822,22 @@ class GlobalInstabilityIndex(BaseFeaturizer):
         """
         elements = [str(i) for i in s.composition.element_composition.elements]
         if elements[0] == elements[-1]:
-            raise ValueError("No oxidation states with single element.")    
-        
+            raise ValueError("No oxidation states with single element.")
+
         bond_valence_sums = []
         cutoff = self.r_cut
         pairs = s.get_all_neighbors(r=cutoff)
         site_val_sums = {} # Cache bond valence deviations
-        
+
         for i, neighbor_list in enumerate(pairs):
             site = s[i]
             equivs = self.get_equiv_sites(s, site)
             flag = False
-            
-            # If symm. identical site has cached bond valence sum difference, 
+
+            # If symm. identical site has cached bond valence sum difference,
             # use it to avoid unnecessary calculations
             for item in equivs:
-                if item in site_val_sums: 
+                if item in site_val_sums:
                     bond_valence_sums.append(site_val_sums[item])
                     site_val_sums[site] = site_val_sums[item]
                     flag = True
@@ -3842,7 +3847,7 @@ class GlobalInstabilityIndex(BaseFeaturizer):
             site_val = site.species.elements[0].oxi_state
             site_el = str(site.species.element_composition.elements[0])
             bvs = self.calc_bv_sum(site_val, site_el, neighbor_list)
-    
+
             site_val_sums[site] = bvs - site_val
         gii = np.linalg.norm(list(site_val_sums.values())) /\
               np.sqrt(len(site_val_sums))
@@ -3893,16 +3898,16 @@ class GlobalInstabilityIndex(BaseFeaturizer):
         if struct.is_ordered:
             for site in struct:
                 nn = struct.get_neighbors(site,r=cutoff)
-                bvs = bond_valence.calculate_bv_sum(site, 
-                                                    nn, 
+                bvs = bond_valence.calculate_bv_sum(site,
+                                                    nn,
                                                     scale_factor=scale_factor)
                 deviations.append(bvs - site.species.elements[0].oxi_state)
             gii = np.linalg.norm(deviations) / np.sqrt(len(deviations))
         else:
             for site in struct:
                 nn = struct.get_neighbors(site,r=cutoff)
-                bvs = bond_valence.calculate_bv_sum_unordered(site, 
-                                                              nn, 
+                bvs = bond_valence.calculate_bv_sum_unordered(site,
+                                                              nn,
                                                               scale_factor=scale_factor)
                 min_diff = min(
                     [bvs - spec.oxi_state for spec in site.species.elements]
@@ -3931,3 +3936,75 @@ class GlobalInstabilityIndex(BaseFeaturizer):
                 "doi = {10.1016/0022-4596(92)90094-C},"
                 "url = {https://doi.org/10.1016/0022-4596(92)90094-C}}",
                 ]
+
+class StructuralComplexity(BaseFeaturizer):
+    """
+    Shannon information entropy of a structure.
+
+    This descriptor treat a structure as a message
+    to evaluate structural complexity (:math:`S`)
+    using the following equation:
+
+    :math:`S = - v \sum_{i=1}^{k} p_i \log_2 p_i`
+
+    :math:`p_i = m_i / v`
+
+    where :math:`v` is the total number of atoms in the unit cell,
+    :math:`p_i` is the probability mass function,
+    :math:`k` is the number of symmetrically inequivalent sites, and
+    :math:`m_i` is the number of sites classified in :math:`i` th
+    symmetrically inequivalent site.
+
+    Features:
+        - information entropy (bits/atom)
+        - information entropy (bits/unit cell)
+
+    Args:
+        symprec: precision for symmetrizing a structure
+    """
+
+    def __init__(self, symprec=0.1):
+        self.symprec = symprec
+
+    def featurize(self, struct):
+        n_of_atoms = len(struct.sites)
+
+        sga = SpacegroupAnalyzer(struct, symprec=self.symprec)
+        sym_s = sga.get_symmetrized_structure()
+
+        v = n_of_atoms
+        iG = 0
+
+        for eq_site in sym_s.equivalent_sites:
+            m_i = len(eq_site)
+            p_i = m_i / v
+            iG -= p_i * np.log2(p_i)
+
+        iG_total = iG * n_of_atoms
+
+        return(iG, iG_total)
+
+    def implementors(self):
+        return ["Koki Muraoka"]
+
+    def feature_labels(self):
+        return [
+            "structural complexity per atom",
+            "structural complexity per cell"
+        ]
+
+    def citations(self):
+        return [
+            "@article{complexity2013,"
+            "author = {Krivovichev, S. V.},"
+            "title = {Structural complexity of minerals: information storage and processing in the mineral world},"
+            "journal = {Mineral. Mag.},"
+            "volume = {77},"
+            "number = {3},"
+            "pages = {275-326},"
+            "year = {2013},"
+            "month = {04},"
+            "issn = {0026-461X},"
+            "doi = {10.1180/minmag.2013.077.3.05},"
+            "url = {https://doi.org/10.1180/minmag.2013.077.3.05}}",
+        ]
